@@ -39,6 +39,10 @@ class _MultiNodeOptimizer(object):
                 return True
         return False
 
+    def reset_prev_params(self):
+        super(_MultiNodeOptimizer, self).__setattr__(
+            'target_params', [])
+        
     def setup(self, link):
         self.actual_optimizer.setup(link)
         return self
