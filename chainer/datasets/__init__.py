@@ -1,4 +1,5 @@
 # import classes and functions
+from chainer.datasets.cached_dataset import CachedDataset  # NOQA
 from chainer.datasets.cifar import get_cifar10  # NOQA
 from chainer.datasets.cifar import get_cifar100  # NOQA
 from chainer.datasets.concatenated_dataset import ConcatenatedDataset  # NOQA
