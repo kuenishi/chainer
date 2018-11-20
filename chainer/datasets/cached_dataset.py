@@ -22,6 +22,7 @@ class CachedDataset(dataset_mixin.DatasetMixin):
         (handle, name) = tempfile.mkstemp(dir=path)
         self.cache_file = handle
         self.filename = name
+
         # TODO: use array instead
         self.offsets = {}
         self.pos = 0
@@ -37,6 +38,8 @@ class CachedDataset(dataset_mixin.DatasetMixin):
     def _do_cache(self, example, i):
         buf = self.serializer(example)
         size = os.pwrite(self.cache_file, buf, self.pos)
+        # Reduce memory pressure by releasing page cache
+        # os.posix_fadvise(self.cache_file, self.pos, size, os.POSIX_FADV_DONTNEED)
         # TODO: think of which exceptions to throw
         assert size > 0
         self.offsets[i] = (self.pos, size)
