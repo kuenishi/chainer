@@ -9,7 +9,8 @@ class DataSizeError(RuntimeError):
 
 
 def scatter_dataset(dataset, comm, root=0, shuffle=False,
-                    seed=None, max_buf_len=256 * 1024 * 1024):
+                    seed=None, max_buf_len=256 * 1024 * 1024,
+                    strict=False):
     """Scatter the given dataset to the workers in the communicator.
 
     The dataset of worker ``root``
@@ -33,6 +34,8 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
             If ``None``, the permutation is changed randomly.
         max_buf_len (int): Max buffer size to be used at broadcasting
             binaries. Must not be larger than 2147483647.
+        strict (bool): Strictly scatters the index and avoid data duplication
+            among scattered datasets.
     Returns:
         Scattered dataset.
     """
@@ -45,35 +48,77 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
         order = numpy.random.RandomState(seed).permutation(
             n_total_samples)
 
-    data = None
-    if comm.rank == root:
-        data = (dataset, order)
-
+    data = (dataset, order) if comm.rank == root else None
     data = comm.bcast_obj(data, max_buf_len=max_buf_len, root=root)
+
     assert data is not None
     (dataset, order) = data
 
+    (b, e) = scatter_index(len(dataset), comm, root, strict)
+    return chainer.datasets.SubDataset(dataset, b, e, order)
+
+
+def scatter_index(n_total_samples, comm, root=0, strict=False):
+    '''Scatters only index to avoid heavy dataset broadcast
+
+    This is core functionality of ``scatter_dataset``. It is almost
+    equal to following code snippet::
+
+        (b, e) = scatter_index(len(dataset), comm, strict=True)
+        order = None
+        if shuffle:
+            order = numpy.random.RandomState(seed).permutation(
+                n_total_samples)
+            order = comm.bcast_obj(order, root=0)
+        dataset = SubDataset(dataset, b, e, order)
+
+    Args:
+        n_total_samples (int): number of total samples to scatter
+        comm: ChainerMN communicator object
+        root (int): root rank to coordinate the operation
+        strict (bool): Strictly scatters the index and avoid data duplication
+            among scattered datasets.
+    Returns:
+        Tuple of two integers, that stands for beginning and ending
+        offsets of the assigned sub part of samples. The ending offset
+        is not border inclusive.
+    '''
     if comm.rank == root:
-        mine = None
-        n_total_samples = len(dataset)
-        n_sub_samples = (n_total_samples + comm.size - 1) // comm.size
-
-        for i in range(comm.size):
-            b = n_total_samples * i // comm.size
-            e = b + n_sub_samples
-
+        for (i, b, e) in _scatter_index(n_total_samples, comm.size,
+                                        strict):
             if i == root:
-                mine = chainer.datasets.SubDataset(dataset, b, e, order)
+                mine = (b, e)
             else:
                 comm.send_obj((b, e), dest=i)
-        assert mine is not None
         return mine
-
     else:
-        data = comm.recv_obj(source=root)
-        assert data is not None
-        (b, e) = data
-        return chainer.datasets.SubDataset(dataset, b, e, order)
+        return comm.recv_obj(source=root)
+
+
+def _scatter_index(n_total_samples, size, strict=False):
+    assert size > 0
+    assert n_total_samples >= 0
+    if not strict:
+        n_sub_samples = (n_total_samples + size - 1) // size
+        for i in range(size):
+            b = n_total_samples * i // size
+            e = b + n_sub_samples
+            yield (i, b, e)
+        return
+    else:
+        b = 0
+        stride = (n_total_samples // size) + 1
+        threshold = n_total_samples % size
+        for i in range(threshold):
+            e = b + stride
+            yield (i, b, e)
+            b += stride
+        stride = n_total_samples // size
+        for i in range(threshold, size):
+            e = b + stride
+            yield (i, b, e)
+            b += stride
+        return
 
 
 def get_n_iterations_for_one_epoch(dataset, local_batch_size, comm):

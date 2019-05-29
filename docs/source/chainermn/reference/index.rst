@@ -26,6 +26,7 @@ Dataset Utilities
 ~~~~~~~~~~~~~~~~~
 
 .. autofunction:: scatter_dataset
+.. autofunction:: scatter_index
 .. autofunction:: chainermn.datasets.create_empty_dataset
 
 
