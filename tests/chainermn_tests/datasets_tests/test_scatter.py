@@ -97,6 +97,7 @@ def test_scatter_index_one():
     for lhs, rhs in zip(split, it):
         assert lhs == rhs
 
+
 @pytest.mark.parametrize('combination', [
     [10, 3], [1244, 23], [2, 1], [230945, 237]])
 def test_scatter_index(combination):
