@@ -20,6 +20,14 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
     to workers. To create a sub dataset, ``chainer.datasets.SubDataset`` is
     used.
 
+    Note::
+        Make sure ``strict`` flag is *not* used for training
+        datasets (where the model being trained is updated by
+        multinode updater). If the ``strict`` flag is on, number of
+        examples among scattered processes may differ and consequently
+        the number of batches in an epoch may differ between
+        processes.
+
     Args:
         dataset: A dataset (e.g., ``list``, ``numpy.ndarray``,
             ``chainer.datasets.TupleDataset``, ...).
@@ -35,9 +43,16 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
         max_buf_len (int): Max buffer size to be used at broadcasting
             binaries. Must not be larger than 2147483647.
         strict (bool): Strictly scatters the index and avoid data duplication
-            among scattered datasets.
+            among scattered datasets. If ``False``, number of
+            scattered examples is guaranteed to be equal among
+            processes and scattered datasets may have duplication
+            among processes. Otherwise, number of scattered examples
+            may not be equal among processes, but scattered examples
+            are guaranteed to have no duplication among processes.
+
     Returns:
         Scattered dataset.
+
     """
 
     assert 0 <= root and root < comm.size
@@ -61,27 +76,41 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
 def scatter_index(n_total_samples, comm, root=0, strict=False):
     '''Scatters only index to avoid heavy dataset broadcast
 
-    This is core functionality of ``scatter_dataset``. It is almost
-    equal to following code snippet::
+    This is core functionality of ``scatter_dataset``, which is
+    almost equal to following code snippet::
 
-        (b, e) = scatter_index(len(dataset), comm, strict=True)
+        (b, e) = scatter_index(len(dataset), comm)
         order = None
         if shuffle:
             order = numpy.random.RandomState(seed).permutation(
                 n_total_samples)
-            order = comm.bcast_obj(order, root=0)
+            order = comm.bcast_obj(order)
         dataset = SubDataset(dataset, b, e, order)
+
+    Note::
+        Make sure ``strict`` flag is *not* used for training
+        datasets (where the model being trained is updated by
+        multinode updater). If the ``strict`` flag is on, number of
+        examples among scattered processs may differ and consequently
+        the number of batches in an epoch may differ between
+        processes.
 
     Args:
         n_total_samples (int): number of total samples to scatter
         comm: ChainerMN communicator object
         root (int): root rank to coordinate the operation
         strict (bool): Strictly scatters the index and avoid data duplication
-            among scattered datasets.
+            among scattered datasets. If ``False``, number of
+            scattered indices is guaranteed to be equal among
+            processes and scattered indices may have duplication
+            among processes. Otherwise, number of scattered indices
+            may not be equal among processes, but scattered indices
+            are guaranteed to have no duplication among processes.
     Returns:
         Tuple of two integers, that stands for beginning and ending
         offsets of the assigned sub part of samples. The ending offset
         is not border inclusive.
+
     '''
     if comm.rank == root:
         for (i, b, e) in _scatter_index(n_total_samples, comm.size,
