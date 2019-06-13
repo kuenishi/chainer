@@ -92,7 +92,7 @@ def test_scatter_large_dataset_flat():
 
 
 def test_scatter_index_one():
-    it = chainermn.datasets.scatter._scatter_index(10, 3, True)
+    it = chainermn.datasets.scatter._scatter_index(10, 3, False)
     split = [(0, 0, 4), (1, 4, 7), (2, 7, 10)]
     for lhs, rhs in zip(split, it):
         assert lhs == rhs
@@ -102,7 +102,7 @@ def test_scatter_index_one():
     [10, 3], [1244, 23], [2, 1], [230945, 237]])
 def test_scatter_index(combination):
     length, size = combination
-    it = chainermn.datasets.scatter._scatter_index(length, size, True)
+    it = chainermn.datasets.scatter._scatter_index(length, size, False)
     union = set()
     total = []
     subsets = []

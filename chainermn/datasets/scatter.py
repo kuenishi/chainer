@@ -10,7 +10,7 @@ class DataSizeError(RuntimeError):
 
 def scatter_dataset(dataset, comm, root=0, shuffle=False,
                     seed=None, max_buf_len=256 * 1024 * 1024,
-                    strict=False):
+                    force_equal_length=True):
     """Scatter the given dataset to the workers in the communicator.
 
     The dataset of worker ``root``
@@ -21,12 +21,10 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
     used.
 
     Note::
-        Make sure ``strict`` flag is *not* used for training
-        datasets (where the model being trained is updated by
-        multinode updater). If the ``strict`` flag is on, number of
-        examples among scattered processes may differ and consequently
-        the number of batches in an epoch may differ between
-        processes.
+        Make sure ``force_equal_length`` flag is *not* used for
+        multinode evaluator or multinode updaters, which assume that
+        the iterator has the same lengths among processes to work
+        correctly.
 
     Args:
         dataset: A dataset (e.g., ``list``, ``numpy.ndarray``,
@@ -42,13 +40,15 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
             If ``None``, the permutation is changed randomly.
         max_buf_len (int): Max buffer size to be used at broadcasting
             binaries. Must not be larger than 2147483647.
-        strict (bool): Strictly scatters the index and avoid data duplication
-            among scattered datasets. If ``False``, number of
-            scattered examples is guaranteed to be equal among
-            processes and scattered datasets may have duplication
-            among processes. Otherwise, number of scattered examples
-            may not be equal among processes, but scattered examples
-            are guaranteed to have no duplication among processes.
+        force_equal_length (bool):
+            Force the scattered fragments of the dataset have equal
+            length. If ``True``, number of scattered examples is
+            guaranteed to be equal among processes and scattered
+            datasets may have duplication among processes. Otherwise,
+            number of scattered examples may not be equal among
+            processes, but scattered examples are guaranteed to have
+            no duplication among processes, intended for strict
+            evaluation of test dataset to avoid duplicated examples.
 
     Returns:
         Scattered dataset.
@@ -69,11 +69,11 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
     assert data is not None
     (dataset, order) = data
 
-    (b, e) = scatter_index(len(dataset), comm, root, strict)
+    (b, e) = scatter_index(len(dataset), comm, root, force_equal_length)
     return chainer.datasets.SubDataset(dataset, b, e, order)
 
 
-def scatter_index(n_total_samples, comm, root=0, strict=False):
+def scatter_index(n_total_samples, comm, root=0, force_equal_length=True):
     '''Scatters only index to avoid heavy dataset broadcast
 
     This is core functionality of ``scatter_dataset``, which is
@@ -88,24 +88,25 @@ def scatter_index(n_total_samples, comm, root=0, strict=False):
         dataset = SubDataset(dataset, b, e, order)
 
     Note::
-        Make sure ``strict`` flag is *not* used for training
-        datasets (where the model being trained is updated by
-        multinode updater). If the ``strict`` flag is on, number of
-        examples among scattered processs may differ and consequently
-        the number of batches in an epoch may differ between
-        processes.
+        Make sure ``force_equal_length`` flag is *not* used for
+        multinode evaluator or multinode updaters, which assume that
+        the iterator has the same lengths among processes to work
+        correctly.
 
     Args:
         n_total_samples (int): number of total samples to scatter
         comm: ChainerMN communicator object
         root (int): root rank to coordinate the operation
-        strict (bool): Strictly scatters the index and avoid data duplication
-            among scattered datasets. If ``False``, number of
-            scattered indices is guaranteed to be equal among
-            processes and scattered indices may have duplication
-            among processes. Otherwise, number of scattered indices
-            may not be equal among processes, but scattered indices
-            are guaranteed to have no duplication among processes.
+        force_equal_length (bool):
+            Force the scattered fragments of the index have equal
+            length. If ``True``, number of scattered indices is
+            guaranteed to be equal among processes and scattered
+            datasets may have duplication among processes. Otherwise,
+            number of scattered indices may not be equal among
+            processes, but scattered indices are guaranteed to have
+            no duplication among processes, intended for strict
+            evaluation of test dataset to avoid duplicated examples.
+
     Returns:
         Tuple of two integers, that stands for beginning and ending
         offsets of the assigned sub part of samples. The ending offset
@@ -114,7 +115,7 @@ def scatter_index(n_total_samples, comm, root=0, strict=False):
     '''
     if comm.rank == root:
         for (i, b, e) in _scatter_index(n_total_samples, comm.size,
-                                        strict):
+                                        force_equal_length):
             if i == root:
                 mine = (b, e)
             else:
@@ -124,10 +125,10 @@ def scatter_index(n_total_samples, comm, root=0, strict=False):
         return comm.recv_obj(source=root)
 
 
-def _scatter_index(n_total_samples, size, strict=False):
+def _scatter_index(n_total_samples, size, force_equal_length):
     assert size > 0
     assert n_total_samples >= 0
-    if not strict:
+    if force_equal_length:
         n_sub_samples = (n_total_samples + size - 1) // size
         for i in range(size):
             b = n_total_samples * i // size
