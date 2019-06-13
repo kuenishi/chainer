@@ -21,7 +21,7 @@ def scatter_dataset(dataset, comm, root=0, shuffle=False,
     used.
 
     Note::
-        Make sure ``force_equal_length`` flag is *not* used for
+        Make sure ``force_equal_length`` flag is *not* off for
         multinode evaluator or multinode updaters, which assume that
         the iterator has the same lengths among processes to work
         correctly.
@@ -88,7 +88,7 @@ def scatter_index(n_total_samples, comm, root=0, force_equal_length=True):
         dataset = SubDataset(dataset, b, e, order)
 
     Note::
-        Make sure ``force_equal_length`` flag is *not* used for
+        Make sure ``force_equal_length`` flag is *not* off for
         multinode evaluator or multinode updaters, which assume that
         the iterator has the same lengths among processes to work
         correctly.
