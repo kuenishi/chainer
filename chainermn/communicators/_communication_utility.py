@@ -135,9 +135,9 @@ def chunked_bcast_obj(obj, mpi_comm, max_buf_len=256 * 1024 * 1024,
     # check XOR condition of obj is None and rank==0
     # rank \ obj | None | not None |
     #   == 0     |  NG  |   OK     |
-    #    > 0     |  OK  |   NG     |
+    #    > 0     |  OK  |   OK(ign)|
     assert not (obj is None and mpi_comm.rank == root)
-    assert not (obj is not None and mpi_comm.rank != root)
+    # assert not (obj is not None and mpi_comm.rank != root)
 
     if obj is not None and mpi_comm.rank == root:
         pickled_bytes = pickle.dumps(obj, protocol=pickle.HIGHEST_PROTOCOL)
