@@ -81,7 +81,8 @@ def create_communicator(
         mpi_comm = mpi4py.MPI.COMM_WORLD
 
     allreduce_grad_dtype, batched_copy = argument.parse_kwargs(
-        kwargs, ('allreduce_grad_dtype', None), ('batched_copy', True))
+        kwargs, ('allreduce_grad_dtype', None), ('batched_copy', True),
+        ('trace_latency', False), ('out', None))
     argument.assert_kwargs_empty(kwargs)
 
     if 'batched_copy' in kwargs:
@@ -92,6 +93,10 @@ def create_communicator(
     if communicator_name != 'pure_nccl' and allreduce_grad_dtype is not None:
         raise ValueError(
             'allreduce_grad_dtype is only available'
+            'at \'pure_nccl\' communicator.')
+    if communicator_name != 'pure_nccl' and trace_latency:
+        raise ValueError(
+            'trace_latency is only available'
             'at \'pure_nccl\' communicator.')
 
     comm = None
@@ -116,6 +121,7 @@ def create_communicator(
             import PureNcclCommunicator
         comm = PureNcclCommunicator(mpi_comm=mpi_comm)
         comm.set_config('allreduce_grad_dtype', allreduce_grad_dtype)
+        comm.set_config('trace_latency', trace_latency, out=out)
 
     elif communicator_name == 'dummy':
         from chainermn.communicators.dummy_communicator \

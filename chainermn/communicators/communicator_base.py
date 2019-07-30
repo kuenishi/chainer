@@ -103,6 +103,38 @@ class CommunicatorBase(six.with_metaclass(ABCMeta)):
         return self._configs
 
     @abstractmethod
+    def set_config(self, name, on=True, **kwargs):
+        '''Set configurations(s) on/off
+
+        Args:
+            name (str):
+                Name of configuration to set.
+            on (bool):
+                Give True to set it on. False to set if off.
+            kwargs:
+                Arbitrary arguments depending on each configuration.
+
+        '''
+        raise NotImplementedError()
+
+    @abstractmethod
+    def get_config(self, name=None):
+        '''Get configuration value(s)
+
+        Args:
+            name (str):
+                Name of configuration to set. If it is None,
+                all config names and values are returned.
+
+        Returns:
+            Actual value of the configuration if it is on.  None if it
+            is off. If ``None`` is given as ``name``, ``None`` or
+            dictionary of names and configuration values is returned.
+
+        '''
+        raise NotImplementedError()
+
+    @abstractmethod
     def split(self, color, key):
         """A function anologous to ``MPI_Comm_Split`` .
 

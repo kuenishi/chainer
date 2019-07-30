@@ -52,13 +52,13 @@ def main():
         if args.communicator == 'naive':
             print('Error: \'naive\' communicator does not support GPU.\n')
             exit(-1)
-        comm = chainermn.create_communicator(args.communicator)
+        comm = chainermn.create_communicator(args.communicator, out=args.out)
         device = comm.intra_rank
     else:
         if args.communicator != 'naive':
             print('Warning: using naive communicator '
                   'because only naive supports CPU-only execution')
-        comm = chainermn.create_communicator('naive')
+        comm = chainermn.create_communicator('naive', out=args.out)
         device = -1
 
     if comm.rank == 0:
@@ -117,6 +117,7 @@ def main():
         chainer.serializers.load_npz(args.resume, trainer)
 
     trainer.run()
+    comm.finalize()
 
 
 if __name__ == '__main__':

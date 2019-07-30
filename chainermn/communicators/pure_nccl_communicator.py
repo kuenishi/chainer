@@ -4,6 +4,8 @@ import chainer.cuda
 
 from chainermn.communicators import _communication_utility
 from chainermn.communicators import _memory_utility
+from chainermn.communicators._trace_utility import GpuKernelLatencyTracer
+from chainermn.communicators._trace_utility import NullLatencyTracer
 from chainermn.communicators import mpi_communicator_base
 from chainermn import nccl
 
@@ -43,10 +45,11 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self.allreduce_dtype_to_grad_dtype_kernel = None
         self.params_data = None
 
-        self.trace_latency = False
-        self.out = None
+        with self.config_scope():
+            self.trace_latency = False
+            self.out = None
+            self.force_sync = False
         self.nccl_tracer = None
-        self.force_sync = False
 
     def finalize(self):
         super(PureNcclCommunicator, self).finalize()
@@ -54,16 +57,21 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             self.nccl_comm.destroy()
             self.nccl_comm = None
 
-        self.nccl_tracer.finalize()
+        if self.nccl_tracer:
+            self.nccl_tracer.finalize()
 
     def _init_comms(self):
         if self.nccl_comm is not None:
             return
         self.nccl_comm = _communication_utility.init_nccl_comm(self.mpi_comm)
+        if self.
 
     def set_config(self, name, value=True, **kwargs):
         with self.config_scope():
-            if name == 'allreduce_grad_dtype':
+            if name == 'trace_latency':
+                self.trace_latency = value
+                self.out = kwargs['out']
+            elif name == 'allreduce_grad_dtype':
                 allreduce_grad_dtype = kwargs['allreduce_grad_dtype']
                 if allreduce_grad_dtype is not None:
                     allreduce_grad_dtype = np.dtype(allreduce_grad_dtype)
@@ -77,9 +85,17 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
                 super(PureNcclCommunicator, self).set_config(name, value,
                                                              **kwargs)
 
+        if name == 'trace_latency' and self.trace_latency:
+            self.nccl_tracer = GpuKernelLatencyTracer(self.out, self.rank)
+        else:
+            self.nccl_tracer = NullLatencyTracer()
+
+                
     def get_config(self, name=None):
         if name == 'allreduce_grad_dtype':
             return self.allreduce_grad_dtype
+        elif name == 'trace_latency':
+            return self.trace_latency
         else:
             return super(PureNcclCommunicator, self).get_config(name)
 
@@ -95,10 +111,14 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
 
         _memory_utility.pack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
-        self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
-                             _communication_utility._get_nccl_type_id(
-                                 data_dtype),
-                             0, stream.ptr)
+
+        with self.nccl_tracer:
+            self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
+                                 _communication_utility._get_nccl_type_id(
+                                     data_dtype),
+                                 0, stream.ptr)
+
+
         _memory_utility.unpack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
 
@@ -181,9 +201,12 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             stream = chainer.cuda.Stream.null
         self._init_comms()
         type_id = _communication_utility._get_nccl_type_id(dtype)
-        self.nccl_comm.allReduce(sendbuf.ptr(),
-                                 recvbuf.ptr(), n_elems,
-                                 type_id, nccl.NCCL_SUM, stream.ptr)
+
+        with self.nccl_tracer:
+            self.nccl_comm.allReduce(sendbuf.ptr(),
+                                     recvbuf.ptr(), n_elems,
+                                     type_id, nccl.NCCL_SUM, stream.ptr)
+
         div_by_size = chainer.cuda.elementwise(
             '',
             '{} x'.format(dtype.name),
