@@ -1,5 +1,6 @@
 import six
 
+from chainer.training import extension
 from chainer.iterators import SerialIterator
 from chainer import backend
 from chainer.dataset import convert
@@ -7,7 +8,7 @@ from chainer import function
 from chainer import reporter as reporter_module
 
 
-class MultiNodeAggregationEvaluator(Extension):
+class MultiNodeAggregationEvaluator(extension.Extension):
     '''MultiNodeEvaluator for non-allreducable evaluation
 
     It has 3 plugin points:
@@ -25,10 +26,10 @@ class MultiNodeAggregationEvaluator(Extension):
                  device=None, gather_batch=False, eval_func=None,
                  postproc_func=None):
         self.comm = comm
-        self.iterator
-        self.target = target
+        self.iterator = iterator
+        self._targets = {"main": target }
         self.batchsize = batchsize
-        self.converter = convert.concat_examples,
+        self.converter = convert.concat_examples
         self.gather_batch = gather_batch
         self.eval_func = eval_func
         self.postproc_func = postproc_func
@@ -70,7 +71,8 @@ class MultiNodeAggregationEvaluator(Extension):
         if self.comm.rank == root:
             with reporter:
                 report = self.aggregate(results)
-            reporter_module.report(report, self.target)
+            for name, target in six.iteritems(self._targets):
+                reporter_module.report(report, target)
 
     def postprocess_local(self, batch, results):
         '''Postprocess the result of inference locally
