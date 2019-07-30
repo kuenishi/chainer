@@ -117,6 +117,7 @@ def main():
         chainer.serializers.load_npz(args.resume, trainer)
 
     trainer.run()
+    comm.finalize()
 
 
 if __name__ == '__main__':
