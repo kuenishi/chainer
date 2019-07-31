@@ -11,10 +11,6 @@ from chainer import reporter as reporter_module
 class MultiNodeAggregationEvaluator(extension.Extension):
     '''MultiNodeEvaluator for non-allreducable evaluation
 
-    It has 3 plugin points:
-    - eval_func (optional)
-    - postproc_func (or eval_hook?, optional)
-    - aggregate (required)
     '''
     trigger = 1, 'epoch'
     default_name = 'validation'
@@ -22,17 +18,12 @@ class MultiNodeAggregationEvaluator(extension.Extension):
 
     name = None
 
-    def __init__(self, comm, iterator, target, batchsize=32,
-                 device=None, gather_batch=False, eval_func=None,
-                 postproc_func=None):
+    def __init__(self, comm, iterator, target, device=None,
+                 eval_func=None):
         self.comm = comm
         self.iterator = iterator
-        self._targets = {"main": target }
-        self.batchsize = batchsize
-        self.converter = convert.concat_examples
-        self.gather_batch = gather_batch
+        self._targets = {"main": target}
         self.eval_func = eval_func
-        self.postproc_func = postproc_func
 
         if device is not None:
             device = backend.get_device(device)
@@ -54,66 +45,72 @@ class MultiNodeAggregationEvaluator(extension.Extension):
                                    target.namedlinks(skipself=True))
 
         root = 0
-        rounds = 8 #  Checks whether local eval is all done every 8 rounds
-        results = []
-        all_done = False
-        while not all_done:
-            for result in self.evaluate_local(rounds):
-                results0 = self.comm.gather_obj(result, root=root)
-                # ProgressBar can be put here
-                if self.comm.rank == root:
-                    valid_results = [r for r in results0 if r is not None]
-                    all_done = len(valid_results) == 0
-                    results.extend(valid_results)
-
-            all_done = self.comm.bcast_obj(all_done, root=root)
+        self.iterator.reset()
+        g = self.evaluate_local(root)
 
         if self.comm.rank == root:
-            with reporter:
-                report = self.aggregate(results)
-            for name, target in six.iteritems(self._targets):
-                reporter_module.report(report, target)
+            self.aggregate(g)
+        else:
+            for _ in g:
+                pass
 
-    def postprocess_local(self, batch, results):
-        '''Postprocess the result of inference locally
+    def evaluate_local(self, root):
+        rounds = 8 #  Checks whether local eval is all done every 8 rounds
+        all_done = None
+        eval_func = self.eval_func or self._target['main']
+        while not all_done:
+            all_done = None
+            results = None
+            rest_values = None
+            for i in range(rounds):
+                try:
+                    batch = self.iterator.next()
+                    in_arrays, rest_values = self.preprocess(batch)
 
-        You might need both ground truth from batch and inference
-        results from model. Override this if you want to do further
-        postprocessing locally, in parallel.
+                    with function.no_backprop_mode():
+                        if isinstance(in_arrays, tuple):
+                            results = eval_func(*in_arrays)
+                        elif isinstance(in_arrays, dict):
+                            results = eval_func(**in_arrays)
+                        else:
+                            results = eval_func(in_arrays)
 
-        The results should not be ``None``. (TODO(kuenishi): is there
-        a need to support None?)
+                    del batch
+                    result = self.postprocess(in_arrays, results, rest_values)
+                    del in_arrays
 
-        '''
-        if self.gather_batch:
-            results = (batch, results)
-        return results
+                except StopIteration:
+                    result = None
 
-    def evaluate_local(self, rounds):
-        self.iterator.reset()
-        eval_func = self.eval_func or self.target
+                results = self.comm.gather_obj(result, root=root)
 
-        for i in range(rounds):
-            try:
-                batch = self.iterator.next()
-                in_arrays = convert._call_converter(
-                    self.converter, batch, self.device)
-                with function.no_backprop_mode():
-                    if isinstance(in_arrays, tuple):
-                        results = eval_func(*in_arrays)
-                    elif isinstance(in_arrays, dict):
-                        results = eval_func(**in_arrays)
-                    else:
-                        results = eval_func(in_arrays)
-                yield self.postprocess_local(batch, results)
-            except StopIteration:
-                yield None
+                if self.comm.rank == root:
+                    valid_results = [r for r in results if r is not None]
+                    for result in valid_results:
+                        yield result
+
+                    all_done = len(valid_results) == 0
+
+            all_done = self.comm.bcast_obj(all_done, root=root)
         return
 
-    def aggregate(self, results):
+    def preprocess(self, batch):
+        # batch is obtained from iterator.next()
+        in_array = convert.concat_examples(batch)
+        return in_array, None
+
+    def postprocess(self, in_array, results, rest=None):
+        # results obtained from eval_func or target model
+        return results
+
+    def aggregate(self, results_gen):
+        # results_gen: generator object from postprocess at each
+        # process
         raise NotImplementedError()
 
-    # TODO: def serialize(self, serializer): ...
+    def serialize(self, serializer):
+        # TODO(kuenishi):
+        raise NotImplementedError()
 
 
 def create_multi_node_evaluator(actual_evaluator, communicator):
