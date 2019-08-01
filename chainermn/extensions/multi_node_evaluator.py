@@ -2,7 +2,6 @@ import copy
 import six
 
 from chainer.training import extension
-from chainer.iterators import SerialIterator
 from chainer import backend
 from chainer.dataset import convert
 from chainer import function
@@ -51,9 +50,6 @@ class MultiNodeAggregationEvaluator(extension.Extension):
 
         if self.comm.rank == root:
             self.aggregate(g)
-        else:
-            for _ in g:
-                pass
 
     def evaluate_local(self, root):
         rounds = 8 #  Checks whether local eval is all done every 8 rounds
@@ -199,7 +195,6 @@ class GatherEvaluator(extension.Extension):
         while not all_done:
             all_done = None
             results = None
-            rest_values = None
             for i in range(rounds):
                 try:
                     batch = iterator.next()
