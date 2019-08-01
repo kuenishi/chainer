@@ -113,6 +113,97 @@ class MultiNodeAggregationEvaluator(extension.Extension):
         raise NotImplementedError()
 
 
+class GatherEvaluator(extension.Extension):
+    '''MultiNodeEvaluator for non-allreducable evaluation
+
+    '''
+    trigger = 1, 'epoch'
+    default_name = 'validation'
+    priority = extension.PRIORITY_WRITER
+
+    name = None
+
+    def __init__(self, comm, iterator, target, aggregate_func, device=None,
+                 converter=None, eval_func=None):
+        self.comm = comm
+        self.iterator = iterator
+        self._targets = {"main": target}
+        self.eval_func = eval_func
+        self.aggregate_func = aggregate_func
+        self.converter = conveter
+
+        if device is not None:
+            device = backend.get_device(device)
+        self.device = device
+
+    def initialize(self, trainer=None):
+        self.iterator.reset()
+
+    def __call__(self, trainer):
+        # Set up a reporter
+        reporter = reporter_module.Reporter()
+        if self.name is not None:
+            prefix = self.name + '/'
+        else:
+            prefix = ''
+        for name, target in six.iteritems(self._targets):
+            reporter.add_observer(prefix + name, target)
+            reporter.add_observers(prefix + name,
+                                   target.namedlinks(skipself=True))
+
+        root = 0
+        self.iterator.reset()
+        g = self.evaluate_local(root)
+
+        if self.comm.rank == root:
+            self.aggregate_func(g)
+        else:
+            for _ in g:
+                pass
+
+    def evaluate_local(self, root):
+        rounds = 8 #  Checks whether local eval is all done every 8 rounds
+        all_done = None
+        eval_func = self.eval_func or self._target['main']
+        while not all_done:
+            all_done = None
+            results = None
+            rest_values = None
+            for i in range(rounds):
+                try:
+                    batch = self.iterator.next()
+                    # in_arrays, rest_values = self.preprocess(batch)
+                    # Number of input values are deviced, it shows length in one node
+                    in_arrays = batch
+                    if self.converter:
+                        in_arrays = convert._call_converter(self.converter,
+                                                            batch, self.device)
+
+                    with function.no_backprop_mode():
+                        if isinstance(in_arrays, tuple):
+                            results = eval_func(*in_arrays)
+                        elif isinstance(in_arrays, dict):
+                            results = eval_func(**in_arrays)
+                        else:
+                            results = eval_func(in_arrays)
+
+                except StopIteration:
+                    results = None
+
+                results = self.comm.gather_obj(results, root=root)
+
+                if self.comm.rank == root:
+                    valid_results = [r for r in results if r is not None]
+                    for result in valid_results:
+                        yield result
+
+                    all_done = len(valid_results) == 0
+
+            all_done = self.comm.bcast_obj(all_done, root=root)
+        return
+
+
+
 def create_multi_node_evaluator(actual_evaluator, communicator):
     """Create a multi node evaluator from a normal evaluator.
 
