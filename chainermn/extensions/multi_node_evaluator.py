@@ -117,6 +117,21 @@ class MultiNodeAggregationEvaluator(extension.Extension):
 class GatherEvaluator(extension.Extension):
     '''MultiNodeEvaluator for non-allreducable evaluation
 
+    This solves two issues that current Evaluator-based multi-node
+    evaluator cannot solve:
+    - Evaluate a Dataset that cannot evenly divided with comm.size
+      (where iterators may yield different number of batches)
+    - Evaluation that is not a simple add-and-devide style averaging
+
+    While it has drawbacks:
+    - A little complicated communication pattern that involves
+      comm.gather_obj() and comm.bcast_obj(), drawing back from
+      just one call of comm.allreduce_obj() per evaluation
+    - Additional implementation of aggregation required to users
+    - No compatibility with chainer.training.extensions.Evaluator
+    - No automatic support of Reporter, as aggregation pattern
+      is not typical
+
     '''
     trigger = 1, 'epoch'
     default_name = 'validation'
@@ -129,7 +144,8 @@ class GatherEvaluator(extension.Extension):
         '''
         iterator: test data iterator, (works with uneven iterators
         target or eval_func must be non-None
-        aggregate_func: fun (Iterator) ->
+        aggregate_func: fun (Iterator)
+        converter: None by default, different from Updaters. <== note!
         '''
         self.comm = comm
         self.iterator = iterator
@@ -167,15 +183,14 @@ class GatherEvaluator(extension.Extension):
         else:
             it = copy.copy(self.iterator)
 
-        # Or obtain target from trainer
+        # TODO: Or obtain target from trainer
         eval_func = self.eval_func or self._targets['main']
         g = self.evaluate_local(eval_func, it)
 
         if self.comm.rank == self.root:
             self.aggregate_func(g)
         else:
-            for _ in g:
-                pass
+            for _ in g: pass
 
     def evaluate_local(self, eval_func, iterator):
         rounds = 8 #  Checks whether local eval is all done every 8 rounds
