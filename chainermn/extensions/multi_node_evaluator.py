@@ -1,3 +1,4 @@
+import copy
 import six
 
 from chainer.training import extension
@@ -124,17 +125,26 @@ class GatherEvaluator(extension.Extension):
     name = None
 
     def __init__(self, comm, iterator, target, aggregate_func, device=None,
-                 converter=None, eval_func=None):
+                 converter=None, eval_func=None, root=0):
+        '''
+        iterator: test data iterator, (works with uneven iterators
+        target or eval_func must be non-None
+        aggregate_func: fun (Iterator) ->
+        '''
         self.comm = comm
         self.iterator = iterator
         self._targets = {"main": target}
         self.eval_func = eval_func
+        assert callable(aggregate_func)
         self.aggregate_func = aggregate_func
-        self.converter = conveter
+        self.converter = converter
 
         if device is not None:
             device = backend.get_device(device)
         self.device = device
+
+        assert 0 <= root and root < self.comm.size
+        self.root = root
 
     def initialize(self, trainer=None):
         self.iterator.reset()
@@ -151,33 +161,39 @@ class GatherEvaluator(extension.Extension):
             reporter.add_observers(prefix + name,
                                    target.namedlinks(skipself=True))
 
-        root = 0
-        self.iterator.reset()
-        g = self.evaluate_local(root)
+        if hasattr(self.iterator, 'reset'):
+            self.iterator.reset()
+            it = self.iterator
+        else:
+            it = copy.copy(self.iterator)
 
-        if self.comm.rank == root:
+        # Or obtain target from trainer
+        eval_func = self.eval_func or self._targets['main']
+        g = self.evaluate_local(eval_func, it)
+
+        if self.comm.rank == self.root:
             self.aggregate_func(g)
         else:
             for _ in g:
                 pass
 
-    def evaluate_local(self, root):
+    def evaluate_local(self, eval_func, iterator):
         rounds = 8 #  Checks whether local eval is all done every 8 rounds
         all_done = None
-        eval_func = self.eval_func or self._target['main']
+
         while not all_done:
             all_done = None
             results = None
             rest_values = None
             for i in range(rounds):
                 try:
-                    batch = self.iterator.next()
-                    # in_arrays, rest_values = self.preprocess(batch)
-                    # Number of input values are deviced, it shows length in one node
-                    in_arrays = batch
+                    batch = iterator.next()
+
                     if self.converter:
                         in_arrays = convert._call_converter(self.converter,
                                                             batch, self.device)
+                    else:
+                        in_arrays = batch
 
                     with function.no_backprop_mode():
                         if isinstance(in_arrays, tuple):
@@ -190,16 +206,16 @@ class GatherEvaluator(extension.Extension):
                 except StopIteration:
                     results = None
 
-                results = self.comm.gather_obj(results, root=root)
+                results = self.comm.gather_obj(results, root=self.root)
 
-                if self.comm.rank == root:
+                if self.comm.rank == self.root:
                     valid_results = [r for r in results if r is not None]
                     for result in valid_results:
                         yield result
 
                     all_done = len(valid_results) == 0
 
-            all_done = self.comm.bcast_obj(all_done, root=root)
+            all_done = self.comm.bcast_obj(all_done, root=self.root)
         return
 
 
