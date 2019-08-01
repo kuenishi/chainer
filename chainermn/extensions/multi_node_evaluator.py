@@ -50,6 +50,8 @@ class MultiNodeAggregationEvaluator(extension.Extension):
 
         if self.comm.rank == root:
             self.aggregate(g)
+        else:
+            for _ in g: pass
 
     def evaluate_local(self, root):
         rounds = 8 #  Checks whether local eval is all done every 8 rounds
