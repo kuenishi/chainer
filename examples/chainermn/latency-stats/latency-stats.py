@@ -22,7 +22,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', help="directory to read", default='result')
-    parser.add_argument('--out', help="filename to save", default='result.csv')
+    parser.add_argument('--out', help="filename to save")
     # TODO(kuenishi): Add argument to ignore several ranks where files may lack
     args = parser.parse_args()
 
@@ -38,7 +38,10 @@ def main():
             break
     df = pd.concat(dfs, axis=1)
 
-    ext = os.path.splitext(args.out)[1]
+    if args.out:
+        ext = os.path.splitext(args.out)[1]
+    else:
+        ext = None
 
     if ext == '.pq':
         df.to_parquet(args.out)

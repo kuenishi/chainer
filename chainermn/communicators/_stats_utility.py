@@ -37,6 +37,7 @@ class GpuKernelLatencyStats(object):
         
         self.result = result
 
+        os.makedirs(result, exist_ok=True)
         filename = os.path.join(result, "latency.{}.log".format(self.rank))
         self.out = open(filename, 'w')
         column = "{}|{}\n".format(socket.gethostname(), self.rank)
@@ -58,6 +59,7 @@ class GpuKernelLatencyStats(object):
                                                    self._stop)
             self.latencies.append(t)
             self.out.write("{}\n".format(t))
+            self.out.flush()
 
         self._start.record(self.stream)
         self.have_record = False

@@ -66,6 +66,10 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         if self._stats:
             self._stats.finalize()
 
+    def stats_on(self, out):
+        self.out = out
+        self.latency_stats = True
+
     def _init_comms(self):
         if self.nccl_comm is not None:
             return
