@@ -1,10 +1,10 @@
-import collections
 import warnings
 
 import chainer.cuda
 
 from chainermn.communicators import _communication_utility
 from chainermn.communicators import _memory_utility
+from chainermn.communicators import _stats_utility
 from chainermn.communicators import mpi_communicator_base
 from chainermn import nccl
 
@@ -14,7 +14,8 @@ import numpy as np
 class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
 
     def __init__(self, mpi_comm, allreduce_grad_dtype=None,
-                 batched_copy=False):
+                 batched_copy=False, latency_stats=False,
+                 out=None):
         super(PureNcclCommunicator, self).__init__(mpi_comm)
         if not nccl._available or nccl.get_build_version() < 2000:
             raise RuntimeError(
@@ -48,8 +49,13 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self.allreduce_dtype_to_grad_dtype_kernel = None
         self.params_data = None
 
-        self.latencies = collections.deque(maxlen=1024)
+        # TODO: remove this
+        latency_stats = True
+        # ^^^^
 
+        self.latency_stats = latency_stats
+        self._stats = None
+        self.out = out
 
     def finalize(self):
         super(PureNcclCommunicator, self).finalize()
@@ -57,21 +63,17 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             self.nccl_comm.destroy()
             self.nccl_comm = None
 
-        # Print stats
-        mean = np.mean(self.latencies)
-        print('allreduce letency stats (last 1024): rank', self.rank,
-              'max', np.max(self.latencies),
-              'min', np.min(self.latencies),
-              'mean', mean,
-              'stdev', sum( (x-mean) ** 2 for x in self.latencies ) / (len(self.latencies) - 1))
-
+        if hasattr(self._stats, 'save'):
+            self._stats.save(None)
 
     def _init_comms(self):
         if self.nccl_comm is not None:
             return
         self.nccl_comm = _communication_utility.init_nccl_comm(self.mpi_comm)
-        self.start = chainer.cuda.Event(block=False)
-        self.stop = chainer.cuda.Event(block=False)
+        if self.latency_stats:
+            self._stats = _stats_utility.GpuKernelLatencyStats(self.out, self.rank)
+        else:
+            self._stats = _stats_utility.NullLatencyStats()
 
     def bcast_data(self, model):
         self._init_comms()
@@ -85,12 +87,14 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
 
         _memory_utility.pack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
-        self.start.record(stream)
-        self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
-                             _communication_utility._get_nccl_type_id(
-                                 data_dtype),
-                             0, stream.ptr)
-        self.stop.record(stream)
+
+        self._stats.check_stream(stream)
+        with self._stats:
+            self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
+                                 _communication_utility._get_nccl_type_id(
+                                     data_dtype),
+                                 0, stream.ptr)
+
 
         _memory_utility.unpack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
@@ -205,14 +209,12 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self._init_comms()
         type_id = _communication_utility._get_nccl_type_id(dtype)
 
-        self.start.record(stream)
-        self.nccl_comm.allReduce(sendbuf.ptr(),
-                                 recvbuf.ptr(), n_elems,
-                                 type_id, nccl.NCCL_SUM, stream.ptr)
-        self.stop.record(stream)
-        stream.synchronize()
-        t = chainer.cuda.cuda.get_elapsed_time(self.start, self.stop)
-        self.latencies.append(t)
+        self._stats.check_stream(stream)
+        with self._stats:
+            self.nccl_comm.allReduce(sendbuf.ptr(),
+                                     recvbuf.ptr(), n_elems,
+                                     type_id, nccl.NCCL_SUM, stream.ptr)
+
         div_by_size = chainer.cuda.elementwise(
             '',
             '{} x'.format(dtype.name),

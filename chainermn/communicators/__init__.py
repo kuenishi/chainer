@@ -3,7 +3,8 @@ from chainermn.communicators.communicator_base import CommunicatorBase  # NOQA
 
 def create_communicator(
         communicator_name='pure_nccl', mpi_comm=None,
-        allreduce_grad_dtype=None, batched_copy=False):
+        allreduce_grad_dtype=None, batched_copy=False,
+        latency_stats=False, out=None):
     """Create a ChainerMN communicator.
 
     Different communicators provide different approaches of communication, so
@@ -85,6 +86,10 @@ def create_communicator(
         raise ValueError(
             'batched_copy is only available'
             'at \'pure_nccl\' communicator.')
+    if communicator_name != 'pure_nccl' and latency_stats:
+        raise ValueError(
+            'latency_stats is only available'
+            'at \'pure_nccl\' communicator.')
 
     if communicator_name == 'naive':
         from chainermn.communicators.naive_communicator \
@@ -106,7 +111,9 @@ def create_communicator(
             import PureNcclCommunicator
         return PureNcclCommunicator(mpi_comm=mpi_comm,
                                     allreduce_grad_dtype=allreduce_grad_dtype,
-                                    batched_copy=batched_copy)
+                                    batched_copy=batched_copy,
+                                    latency_stats=latency_stats,
+                                    out=out)
 
     elif communicator_name == 'dummy':
         from chainermn.communicators.dummy_communicator \
