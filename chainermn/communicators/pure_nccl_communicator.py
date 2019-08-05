@@ -63,8 +63,8 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             self.nccl_comm.destroy()
             self.nccl_comm = None
 
-        if hasattr(self._stats, 'save'):
-            self._stats.save(None)
+        if self._stats:
+            self._stats.finalize()
 
     def _init_comms(self):
         if self.nccl_comm is not None:

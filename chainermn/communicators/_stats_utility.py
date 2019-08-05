@@ -1,5 +1,6 @@
 import collections
 import os
+import socket
 
 import numpy as np
 
@@ -38,6 +39,8 @@ class GpuKernelLatencyStats(object):
 
         filename = os.path.join(result, "latency.{}.log".format(self.rank))
         self.out = open(filename, 'w')
+        column = "{}|{}\n".format(socket.gethostname(), self.rank)
+        self.out.write(column)
 
         self.verbose = verbose
 
@@ -54,7 +57,7 @@ class GpuKernelLatencyStats(object):
             t = chainer.cuda.cuda.get_elapsed_time(self._start,
                                                    self._stop)
             self.latencies.append(t)
-            self.out.write(f"{t}\n")
+            self.out.write("{}\n".format(t))
 
         self._start.record(self.stream)
         self.have_record = False
@@ -78,7 +81,7 @@ class GpuKernelLatencyStats(object):
     def print_stats(self):
         # Print stats
         mean = np.mean(self.latencies)
-        print('allreduce letency stats (last 1024): rank', self.rank,
+        print('allreduce letency stats (msec, last 1024): rank', self.rank,
               'max', np.max(self.latencies),
               'min', np.min(self.latencies),
               'mean', mean,
