@@ -57,6 +57,8 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self._stats = None
         self.out = out
 
+        self._barrier_on = False
+
     def finalize(self):
         super(PureNcclCommunicator, self).finalize()
         if self.nccl_comm is not None:
@@ -69,6 +71,9 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
     def stats_on(self, out):
         self.out = out
         self.latency_stats = True
+
+    def barrier_on(self, on=True):
+        self._barrier_on = on
 
     def _init_comms(self):
         if self.nccl_comm is not None:
@@ -92,6 +97,8 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         _memory_utility.pack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
 
+        if self._barrier_on:
+            self.mpi_comm.barrier()
         self._stats.check_stream(stream)
         with self._stats:
             self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
