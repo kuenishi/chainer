@@ -5,8 +5,8 @@ from chainer.utils import argument
 from chainermn.communicators.communicator_base import CommunicatorBase  # NOQA
 
 
-def create_communicator(
-        communicator_name='pure_nccl', mpi_comm=None, **kwargs):
+def create_communicator(communicator_name='pure_nccl', mpi_comm=None,
+                        **kwargs):
     """Create a ChainerMN communicator.
 
     Different communicators provide different approaches of communication, so
@@ -80,9 +80,10 @@ def create_communicator(
                               'and setup MPI and mpi4py.')
         mpi_comm = mpi4py.MPI.COMM_WORLD
 
-    allreduce_grad_dtype, batched_copy = argument.parse_kwargs(
-        kwargs, ('allreduce_grad_dtype', None), ('batched_copy', True),
-        ('trace_latency', False), ('out', None))
+    allreduce_grad_dtype, batched_copy, trace_latency, out = \
+        argument.parse_kwargs(kwargs, ('allreduce_grad_dtype', None),
+                              ('batched_copy', True),
+                              ('trace_latency', False), ('out', None))
     argument.assert_kwargs_empty(kwargs)
 
     if 'batched_copy' in kwargs:
@@ -93,10 +94,6 @@ def create_communicator(
     if communicator_name != 'pure_nccl' and allreduce_grad_dtype is not None:
         raise ValueError(
             'allreduce_grad_dtype is only available'
-            'at \'pure_nccl\' communicator.')
-    if communicator_name != 'pure_nccl' and trace_latency:
-        raise ValueError(
-            'trace_latency is only available'
             'at \'pure_nccl\' communicator.')
 
     comm = None

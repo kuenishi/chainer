@@ -64,7 +64,10 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         if self.nccl_comm is not None:
             return
         self.nccl_comm = _communication_utility.init_nccl_comm(self.mpi_comm)
-        if self.
+        if self.trace_latency:
+            self.nccl_tracer = GpuKernelLatencyTracer(self.out, self.rank)
+        else:
+            self.nccl_tracer = NullLatencyTracer()
 
     def set_config(self, name, value=True, **kwargs):
         with self.config_scope():
@@ -81,21 +84,25 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
                             'numpy.float16, numpy.float32,'
                             'numpy.float64, or None.')
                     self.allreduce_grad_dtype = allreduce_grad_dtype
+            elif name == 'force_barrier':
+                self.force_barrier = value
             else:
                 super(PureNcclCommunicator, self).set_config(name, value,
                                                              **kwargs)
+                return
 
         if name == 'trace_latency' and self.trace_latency:
             self.nccl_tracer = GpuKernelLatencyTracer(self.out, self.rank)
         else:
             self.nccl_tracer = NullLatencyTracer()
-
                 
     def get_config(self, name=None):
         if name == 'allreduce_grad_dtype':
             return self.allreduce_grad_dtype
         elif name == 'trace_latency':
             return self.trace_latency
+        elif name == 'force_barrier':
+            return self.force_barrier
         else:
             return super(PureNcclCommunicator, self).get_config(name)
 
@@ -202,6 +209,8 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self._init_comms()
         type_id = _communication_utility._get_nccl_type_id(dtype)
 
+        if self.force_barrier:
+            self.mpi_comm.barrier()
         with self.nccl_tracer:
             self.nccl_comm.allReduce(sendbuf.ptr(),
                                      recvbuf.ptr(), n_elems,

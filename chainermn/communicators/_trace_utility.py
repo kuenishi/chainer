@@ -12,7 +12,7 @@ import chainer.cuda
 
 class LatencyTracer(six.with_metaclass(ABCMeta)):
     def __init__(self):
-        raise NotImplementedError()
+        pass
 
     @abstractmethod
     def start(self):
@@ -48,14 +48,17 @@ class LatencyLogger(object):
     filename_template = 'latency.{}.log'
 
     def __init__(self, rank, directory):
-        self.filename = os.path.join(result, self.filename_template.format(self.rank))
-        self.out = open(filename, 'w')
-        column = "{}|{}\n".format(socket.gethostname(), self.rank)
+        self.filename = os.path.join(directory,
+                                     self.filename_template.format(rank))
+        self.out = open(self.filename, 'w')
+        column = "{}|{}\n".format(socket.gethostname(), rank)
         self.out.write(column)
+        self.out.flush()
 
     def append(self, latency):
         # Supposed to be milliseconds
-        self.out.write("{}\n".format(t))
+        self.out.write("{}\n".format(latency))
+        self.out.flush()
 
     def close(self):
         self.out.close()
@@ -111,4 +114,9 @@ class GpuKernelLatencyTracer(LatencyTracer):
         self.have_record = True
 
     def finalize(self):
+        if self.have_record:
+            self._stop.synchronize()
+            t = chainer.cuda.cuda.get_elapsed_time(self._start,
+                                                   self._stop)
+            self.logger.append(t)
         self.logger.close()
