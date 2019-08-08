@@ -86,7 +86,7 @@ class CommunicatorBase(six.with_metaclass(ABCMeta)):
                 Arbitrary arguments depending on each configuration.
 
         '''
-        raise ValueError('Unknown config: {}'.format(name))
+        pass
 
     def get_config(self, name=None):
         '''Get configuration value(s)

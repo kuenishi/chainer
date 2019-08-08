@@ -8,6 +8,7 @@ from chainer.utils import collections_abc
 from chainermn.communicators import _communication_utility
 from chainermn.communicators._communication_utility import chunked_bcast_obj
 from chainermn.communicators import _memory_utility
+from chainermn.communicators._trace_utility import NullLatencyTracer
 from chainermn.communicators import communicator_base
 
 
@@ -113,6 +114,8 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
         with self.config_scope():
             self.batched_copy = False
 
+        self.tracer = NullLatencyTracer()
+
     @property
     def rank(self):
         return self.mpi_comm.rank
@@ -141,15 +144,26 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
         if name == 'batched_copy':
             with self.config_scope():
                 self.batched_copy = value
+        elif name == 'trace_latency':
+            with self.config_scope():
+                self.trace_latency = value
+                self.out = kwargs['out']
         else:
-            # Although MpiCommunicatorBase has no ancestor, practice
+            # Because MpiCommunicatorBase has no ancestor, no configs.
             return super(MpiCommunicatorBase, self).set_config(name, **kwargs)
+
+        if self.trace_latency and name == 'trace_latency':
+            self.nccl_tracer = CpuLatencyTracer(out, self.rank)
+        else:
+            self.nccl_tracer = NullLatencyTracer()
 
     def get_config(self, name=None):
         if name == 'batched_copy':
             return self.batched_copy
+        elif name == 'trace_latency':
+            return self.trace_latency
         else:
-            # Although MpiCommunicatorBase has no ancestor, practice.
+            # Because MpiCommunicatorBase has no ancestor, no configs.
             return super(MpiCommunicatorBase, self).get_config(name)
 
     def split(self, color, key):
@@ -644,7 +658,8 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
                 if is_float16:
                     data = data.astype(numpy.float32)
                 buf = _memory_utility.array_to_buffer_object(data)
-                self.mpi_comm.Bcast(buf)
+                with self.tracer:
+                    self.mpi_comm.Bcast(buf)
                 if is_float16:
                     param.data = data.astype(numpy.float16)
 
@@ -710,7 +725,8 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
             array_b32 = recvbuf
         buffer_b = _memory_utility.array_to_buffer_object(array_b32)
 
-        self.mpi_comm.Allreduce(buffer_a, buffer_b)
+        with self.tracer:
+            self.mpi_comm.Allreduce(buffer_a, buffer_b)
 
         if is_float16:
             xp = chainer.backend.get_array_module(recvbuf)

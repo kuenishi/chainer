@@ -67,7 +67,8 @@ class NonCudaAwareCommunicator(mpi_communicator_base.MpiCommunicatorBase):
                 if is_float16:
                     tmp_cpu = tmp_cpu.astype(np.float32)
 
-                self.mpi_comm.Bcast(tmp_cpu)
+                with self.tracer:
+                    self.mpi_comm.Bcast(tmp_cpu)
                 if is_float16:
                     tmp_cpu = tmp_cpu.astype(np.float16)
 
@@ -101,6 +102,8 @@ class NonCudaAwareCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             array_a = self.gpu_buffer_a.array(n_elems_total)
             array_b = self.gpu_buffer_b.array(n_elems_total)
             self._check_ready_to_allreduce(array_a, array_b)
+
+        self.tracer.start()
 
         # Intra-node reduce
         self.intra_nccl_comm.reduce(
@@ -137,6 +140,7 @@ class NonCudaAwareCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self.intra_nccl_comm.bcast(
             self.gpu_buffer_b.ptr(), n_elems_total, nccl.NCCL_FLOAT, 0,
             stream.ptr)
+        self.tracer.stop()
 
         if chainer.is_debug():
             stream.synchronize()

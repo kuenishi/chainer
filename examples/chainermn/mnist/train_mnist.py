@@ -44,6 +44,8 @@ def main():
                         help='Resume the training from snapshot')
     parser.add_argument('--unit', '-u', type=int, default=1000,
                         help='Number of units')
+    parser.add_argument('--trace', help='Directory to save latency trace',
+                        type=str)
     args = parser.parse_args()
 
     # Prepare ChainerMN communicator.
@@ -60,6 +62,8 @@ def main():
                   'because only naive supports CPU-only execution')
         comm = chainermn.create_communicator('naive')
         device = -1
+
+    comm.set_config('trace_latency', out=args.trace)
 
     if comm.rank == 0:
         print('==========================================')
@@ -117,6 +121,9 @@ def main():
         chainer.serializers.load_npz(args.resume, trainer)
 
     trainer.run()
+
+    # It would be nice if you finalize the communicator
+    comm.finalize()
 
 
 if __name__ == '__main__':

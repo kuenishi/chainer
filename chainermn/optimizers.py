@@ -176,6 +176,10 @@ def create_multi_node_optimizer(actual_optimizer, communicator,
         if not isinstance(communicator, PureNcclCommunicator):
             raise ValueError(
                 'This communicator does not support double buffering.')
+        if communicator.trace_latency:
+            raise ValueError(
+                'Double buffering is not supported when'
+                ' latency tracing is on.')
         return _DoubleBufferingOptimizer(actual_optimizer, communicator,
                                          zero_fill)
     return _MultiNodeOptimizer(actual_optimizer, communicator,

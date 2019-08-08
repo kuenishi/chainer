@@ -16,7 +16,6 @@ Communicators
               allgather, finalize,
               set_config, get_config
 
-
 Optimizers and Evaluators
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 

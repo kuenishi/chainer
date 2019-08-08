@@ -80,8 +80,10 @@ def create_communicator(
                               'and setup MPI and mpi4py.')
         mpi_comm = mpi4py.MPI.COMM_WORLD
 
-    allreduce_grad_dtype, batched_copy = argument.parse_kwargs(
-        kwargs, ('allreduce_grad_dtype', None), ('batched_copy', True))
+    allreduce_grad_dtype, batched_copy, trace_latency, out = \
+        argument.parse_kwargs(kwargs, ('allreduce_grad_dtype', None),
+                              ('batched_copy', True),
+                              ('trace_latency', False), ('out', None))
     argument.assert_kwargs_empty(kwargs)
 
     if 'batched_copy' in kwargs:
@@ -129,4 +131,5 @@ def create_communicator(
     # As all currently supported communicators are all ancestor of
     # MpiCommunicator, it is fine calling here for all descendants
     comm.set_config('batched_copy', batched_copy)
+    comm.set_config('trace_latency', trace_latency, out=out)
     return comm
