@@ -61,7 +61,7 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             return
         self.nccl_comm = _communication_utility.init_nccl_comm(self.mpi_comm)
 
-    def set_config(self, name, on=True, **kwargs):
+    def set_config(self, name, value=True, **kwargs):
         with self.config_scope():
             if name == 'allreduce_grad_dtype':
                 allreduce_grad_dtype = kwargs['allreduce_grad_dtype']
@@ -74,7 +74,7 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
                             'numpy.float64, or None.')
                     self.allreduce_grad_dtype = allreduce_grad_dtype
             else:
-                super(PureNcclCommunicator, self).set_config(name, on,
+                super(PureNcclCommunicator, self).set_config(name, value,
                                                              **kwargs)
 
     def get_config(self, name=None):

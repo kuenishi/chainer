@@ -70,7 +70,7 @@ class CommunicatorBase(six.with_metaclass(ABCMeta)):
         '''Number of nodes that participates the cluster.'''
         raise NotImplementedError()
 
-    def set_config(self, name, on=True, **kwargs):
+    def set_config(self, name, **kwargs):
         '''Set configurations(s) on/off
 
         Args:

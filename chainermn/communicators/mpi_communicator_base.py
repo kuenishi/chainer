@@ -137,10 +137,10 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
     def inter_size(self):
         return self._inter_size
 
-    def set_config(self, name, on=True, **kwargs):
+    def set_config(self, name, value=True, **kwargs):
         with self.config_scope():
             if name == 'batched_copy':
-                self.batched_copy = on
+                self.batched_copy = value
             else:
                 # Because MpiCommunicatorBase has no ancestor, no configs.
                 raise ValueError('Unknown config: {}'.format(name))
