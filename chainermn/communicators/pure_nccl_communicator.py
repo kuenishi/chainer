@@ -48,7 +48,7 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         with self.config_scope():
             self.trace_latency = False
             self.out = None
-            self.force_sync = False
+            self.force_barrier = False
         self.nccl_tracer = None
 
     def finalize(self):
@@ -75,7 +75,7 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
                 self.trace_latency = value
                 self.out = kwargs['out']
             elif name == 'allreduce_grad_dtype':
-                allreduce_grad_dtype = kwargs['allreduce_grad_dtype']
+                allreduce_grad_dtype = value
                 if allreduce_grad_dtype is not None:
                     allreduce_grad_dtype = np.dtype(allreduce_grad_dtype)
                     if allreduce_grad_dtype.kind != 'f':

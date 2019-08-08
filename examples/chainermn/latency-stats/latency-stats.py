@@ -22,7 +22,7 @@ def main():
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--path', help="directory to read", default='result')
-    parser.add_argument('--out', help="filename to save", default='result.csv')
+    parser.add_argument('--out', help="filename to save", default=None)
     # TODO(kuenishi): Add argument to ignore several ranks where files may lack
     args = parser.parse_args()
 
@@ -37,6 +37,10 @@ def main():
             print('not found.')
             break
     df = pd.concat(dfs, axis=1)
+
+    if not args.out:
+        print(df)
+        return
 
     ext = os.path.splitext(args.out)[1]
 
