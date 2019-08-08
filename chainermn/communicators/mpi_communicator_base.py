@@ -110,6 +110,8 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
     def __init__(self, mpi_comm):
         self.mpi_comm = mpi_comm
         self._init_ranks()
+        with self.config_scope():
+            self.batched_copy = False
 
     @property
     def rank(self):
@@ -134,6 +136,23 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
     @property
     def inter_size(self):
         return self._inter_size
+
+    def set_config(self, name, on=True, **kwargs):
+        with self.config_scope():
+            if name == 'batched_copy':
+                self.batched_copy = on
+            else:
+                # Because MpiCommunicatorBase has no ancestor, no configs.
+                raise ValueError('Unknown config: {}'.format(name))
+
+    def get_config(self, name=None):
+        if name == 'batched_copy':
+            return self.batched_copy
+        elif name is None:
+            return self._configs
+        else:
+            # Because MpiCommunicatorBase has no ancestor, no configs.
+            raise ValueError('Unknown config: {}'.format(name))
 
     def split(self, color, key):
         return self.__class__(mpi_comm=self.mpi_comm.Split(color, key))
