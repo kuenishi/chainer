@@ -8,6 +8,7 @@ from chainer.utils import collections_abc
 from chainermn.communicators import _communication_utility
 from chainermn.communicators._communication_utility import chunked_bcast_obj
 from chainermn.communicators import _memory_utility
+from chainermn.communicators._trace_utility import CpuLatencyTracer
 from chainermn.communicators._trace_utility import NullLatencyTracer
 from chainermn.communicators import communicator_base
 
@@ -116,6 +117,9 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
 
         self.tracer = NullLatencyTracer()
 
+    def finalize(self):
+        self.tracer.finalize()
+
     @property
     def rank(self):
         return self.mpi_comm.rank
@@ -148,14 +152,17 @@ class MpiCommunicatorBase(communicator_base.CommunicatorBase):
             with self.config_scope():
                 self.trace_latency = value
                 self.out = kwargs['out']
-        else:
-            # Because MpiCommunicatorBase has no ancestor, no configs.
-            return super(MpiCommunicatorBase, self).set_config(name, **kwargs)
 
-        if self.trace_latency and name == 'trace_latency':
-            self.nccl_tracer = CpuLatencyTracer(out, self.rank)
+            # Re-setup latency tracer
+            self.tracer.finalize()
+            if self.trace_latency:
+                # Note: If you set latency tracer twice, logs are
+                # overwritten by newer ones
+                self.tracer = CpuLatencyTracer(self.out, self.rank)
+            else:
+                self.tracer = NullLatencyTracer()
         else:
-            self.nccl_tracer = NullLatencyTracer()
+            return super(MpiCommunicatorBase, self).set_config(name, **kwargs)
 
     def get_config(self, name=None):
         if name == 'batched_copy':

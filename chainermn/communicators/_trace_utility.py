@@ -5,7 +5,6 @@ import socket
 import time
 
 import six
-import numpy as np
 
 import chainer.cuda
 
@@ -21,7 +20,7 @@ class LatencyTracer(six.with_metaclass(ABCMeta)):
     @abstractmethod
     def stop(self):
         raise NotImplementedError()
-        
+
     def __enter__(self):
         self.start()
         return self
@@ -62,8 +61,8 @@ class LatencyLogger(object):
 
     def close(self):
         self.out.close()
-        
-        
+
+
 class CpuLatencyTracer(LatencyTracer):
     def __init__(self, result, rank=0):
         super(CpuLatencyTracer, self).__init__()
@@ -79,12 +78,12 @@ class CpuLatencyTracer(LatencyTracer):
     def stop(self):
         self.e = time.time()
         # Milliseconds
-        self.logger.append( (e - b) / 1000 )
+        self.logger.append((self.e - self.b) / 1000)
 
     def finalize(self):
         self.logger.close()
 
-    
+
 class GpuKernelLatencyTracer(LatencyTracer):
     def __init__(self, result, rank=0):
         super(GpuKernelLatencyTracer, self).__init__()

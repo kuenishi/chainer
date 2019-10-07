@@ -45,11 +45,6 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self.allreduce_dtype_to_grad_dtype_kernel = None
         self.params_data = None
 
-        with self.config_scope():
-            self.trace_latency = False
-            self.out = None
-        self.nccl_tracer = None
-
     def finalize(self):
         super(PureNcclCommunicator, self).finalize()
         if self.nccl_comm is not None:
@@ -58,52 +53,30 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
             self.nccl_comm.destroy()
             self.nccl_comm = None
 
-        if self.nccl_tracer:
-            self.nccl_tracer.finalize()
-
     def _init_comms(self):
         if self.nccl_comm is not None:
             return
         self.nccl_comm = _communication_utility.init_nccl_comm(self.mpi_comm)
+
+        # Setup latency tracer here, after NCCL initialized
         if self.trace_latency:
-            self.nccl_tracer = GpuKernelLatencyTracer(self.out, self.rank)
-        else:
-            self.nccl_tracer = NullLatencyTracer()
+            self.tracer.finalize()
+            self.tracer = GpuKernelLatencyTracer(self.out, self.rank)
 
     def set_config(self, name, value=True, **kwargs):
-        with self.config_scope():
-            if name == 'trace_latency':
+        if name == 'trace_latency':
+            with self.config_scope():
+                # Override MpiCommunicator implementation to use
+                # GpuKernelLatencyTracer
                 self.trace_latency = value
                 self.out = kwargs['out']
-            elif name == 'allreduce_grad_dtype':
-                if value is not None:
-                    allreduce_grad_dtype = np.dtype(value)
-                    if allreduce_grad_dtype.kind != 'f':
-                        raise ValueError(
-                            'allreduce_grad_dtype must be'
-                            'numpy.float16, numpy.float32,'
-                            'numpy.float64, or None.')
-                    self.allreduce_grad_dtype = allreduce_grad_dtype
-            else:
-                super(PureNcclCommunicator, self).set_config(name, value,
-                                                             **kwargs)
-                return
 
-        if name == 'trace_latency' and self.trace_latency:
-            self.nccl_tracer = GpuKernelLatencyTracer(self.out, self.rank)
-        else:
-            self.nccl_tracer = NullLatencyTracer()
-                
-    def get_config(self, name=None):
-        if name == 'allreduce_grad_dtype':
-            return self.allreduce_grad_dtype
-        elif name == 'trace_latency':
-            return self.trace_latency
-        else:
-            return super(PureNcclCommunicator, self).get_config(name)
+            # Reset latency tracer status
+            self.tracer.finalize()
+            if not self.trace_latency:
+                self.tracer = NullLatencyTracer()
 
-    def set_config(self, name, value=True, **kwargs):
-        if name == 'allreduce_grad_dtype':
+        elif name == 'allreduce_grad_dtype':
             if value is not None:
                 allreduce_grad_dtype = np.dtype(value)
                 if allreduce_grad_dtype.kind != 'f':
@@ -138,12 +111,11 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         _memory_utility.pack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
 
-        with self.nccl_tracer:
+        with self.tracer:
             self.nccl_comm.bcast(self.gpu_tmp_buffer.ptr(), n_elems,
                                  _communication_utility._get_nccl_type_id(
                                      data_dtype),
                                  0, stream.ptr)
-
 
         _memory_utility.unpack_params(
             params, 'data', self.gpu_tmp_buffer, data_dtype, False, stream)
@@ -228,7 +200,7 @@ class PureNcclCommunicator(mpi_communicator_base.MpiCommunicatorBase):
         self._init_comms()
         type_id = _communication_utility._get_nccl_type_id(dtype)
 
-        with self.nccl_tracer:
+        with self.tracer:
             self.nccl_comm.allReduce(sendbuf.ptr(),
                                      recvbuf.ptr(), n_elems,
                                      type_id, nccl.NCCL_SUM, stream.ptr)
